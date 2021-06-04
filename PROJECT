@@ -1,0 +1,16 @@
+domain: atze.io
+layout:
+- go.kubebuilder.io/v3
+projectName: canaryop
+repo: github.com/atzedevries/canaryop
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: atze.io
+  group: canary
+  kind: CanaryApp
+  path: github.com/atzedevries/canaryop/api/v1
+  version: v1
+version: "3"

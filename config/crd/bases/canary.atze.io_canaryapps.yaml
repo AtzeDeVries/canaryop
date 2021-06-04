@@ -1,0 +1,105 @@
+
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.4.1
+  creationTimestamp: null
+  name: canaryapps.canary.atze.io
+spec:
+  group: canary.atze.io
+  names:
+    kind: CanaryApp
+    listKind: CanaryAppList
+    plural: canaryapps
+    singular: canaryapp
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: CanaryApp is the Schema for the canaryapps API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: CanaryAppSpec defines the desired state of CanaryApp
+            properties:
+              image:
+                description: Image to be deployed
+                minLength: 0
+                type: string
+              prometheusQuery:
+                description: Prometheus query to check state of deployment should
+                  return result if deployment is failed
+                minLength: 0
+                type: string
+              prometheusURL:
+                description: Url of the prometheus server
+                minLength: 0
+                type: string
+              replicas:
+                description: Replicas of deployment
+                format: int32
+                minimum: 1
+                type: integer
+              secondaryReplicas:
+                description: TestReplicas amount of replicas for smoke test
+                format: int32
+                minimum: 1
+                type: integer
+            required:
+            - image
+            - prometheusQuery
+            - prometheusURL
+            - replicas
+            - secondaryReplicas
+            type: object
+          status:
+            description: CanaryAppStatus defines the observed state of CanaryApp
+            properties:
+              lastFailedTag:
+                description: States which tag failed on deployment so we don't redeploy
+                type: string
+              lastTrafficShift:
+                description: When the last trafficshift shift was done
+                format: date-time
+                type: string
+              successfulRelease:
+                description: A bool which shows if the update has been successful
+                type: boolean
+              testRunning:
+                description: A bool which shows if a smoke test is running
+                type: boolean
+              trafficShift:
+                description: Percentage of traffic send to new version
+                format: int32
+                type: integer
+            required:
+            - lastFailedTag
+            - successfulRelease
+            - testRunning
+            - trafficShift
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

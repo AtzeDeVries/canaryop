@@ -1,0 +1,12 @@
+apiVersion: canary.atze.io/v1
+kind: CanaryApp
+metadata:
+  name: canaryapp-sample
+spec:
+  # Add fields here
+  registry: atzedevries/go-status-code-server
+  tag: v2
+  replicas: 2
+  smokeTestReplicas: 1
+  prometheusQuery: "increase(istio_requests_total{destination_service_name=\"canaryapp-sample\",response_code=~\"5.*\"}[20s]) > 2"
+  prometheusURL: "http://192.168.86.24:9090"
