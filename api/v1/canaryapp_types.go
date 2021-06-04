@@ -38,7 +38,7 @@ type CanaryAppSpec struct {
 
 	//+kubebuilder:validation:Minimum=1
 	// TestReplicas amount of replicas for smoke test
-	TestReplicas int32 `json:"secondaryReplicas"`
+	TestReplicas int32 `json:"testReplicas"`
 
 	//+kubebuilder:validation:MinLength=0
 	// Prometheus query to check state of deployment should return result if deployment is failed

@@ -54,7 +54,7 @@ spec:
                 format: int32
                 minimum: 1
                 type: integer
-              secondaryReplicas:
+              testReplicas:
                 description: TestReplicas amount of replicas for smoke test
                 format: int32
                 minimum: 1
@@ -64,7 +64,7 @@ spec:
             - prometheusQuery
             - prometheusURL
             - replicas
-            - secondaryReplicas
+            - testReplicas
             type: object
           status:
             description: CanaryAppStatus defines the observed state of CanaryApp
