@@ -64,67 +64,67 @@ type CanaryAppReconciler struct {
 // Reconcile makes sure the requested state is the actual state. It is triggered by resources changes
 // you decide to follow
 func (r *CanaryAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("canaryop", req.NamespacedName)
+	log := r.Log.WithValues("canaryAppInstance", req.NamespacedName)
 
-	var canaryop canaryv1.CanaryApp
-	if err := r.Get(ctx, req.NamespacedName, &canaryop); err != nil {
+	var canaryAppInstance canaryv1.CanaryApp
+	if err := r.Get(ctx, req.NamespacedName, &canaryAppInstance); err != nil {
 		log.Info("No Canaryop found")
 		return ctrl.Result{}, nil
 	}
 
 	// create VirtualService
-	vs := resources.VirtualService(&canaryop)
-	if err := r.deployVirtualService(ctx, canaryop, vs, log); err != nil {
+	vs := resources.VirtualService(&canaryAppInstance)
+	if err := r.deployVirtualService(ctx, canaryAppInstance, vs, log); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	// create DestinationRule
-	dr := resources.DestinationRule(&canaryop)
-	if err := r.deployDestinationRule(ctx, canaryop, dr, log); err != nil {
+	dr := resources.DestinationRule(&canaryAppInstance)
+	if err := r.deployDestinationRule(ctx, canaryAppInstance, dr, log); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	// create Gateway
-	gw := resources.Gateway(&canaryop)
-	if err := r.deployGateway(ctx, canaryop, gw, log); err != nil {
+	gw := resources.Gateway(&canaryAppInstance)
+	if err := r.deployGateway(ctx, canaryAppInstance, gw, log); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	// Create Primary Deployment
-	dep := resources.Deployment(&canaryop, "primary", canaryop.Spec.Replicas)
-	if err := r.deployDeployment(ctx, canaryop, dep, log); err != nil {
+	dep := resources.Deployment(&canaryAppInstance, "primary", canaryAppInstance.Spec.Replicas)
+	if err := r.deployDeployment(ctx, canaryAppInstance, dep, log); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	// Create service
-	svc := resources.Service(&canaryop)
-	if err := r.deployService(ctx, canaryop, svc, log); err != nil {
+	svc := resources.Service(&canaryAppInstance)
+	if err := r.deployService(ctx, canaryAppInstance, svc, log); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	// define secondary deployment for later usage
-	depsec := resources.Deployment(&canaryop, "secondary", canaryop.Spec.TestReplicas)
+	depsec := resources.Deployment(&canaryAppInstance, "secondary", canaryAppInstance.Spec.TestReplicas)
 	// handle the state of the new deployment
-	if canaryop.Status.TestRunning {
+	if canaryAppInstance.Status.TestRunning {
 		// requeue if Reconcile loop has been triggered to fast
-		if time.Now().Sub(canaryop.Status.LastTrafficShift.Time).Seconds() < float64(canaryop.Spec.TrafficShiftUpdateInterval) {
+		if time.Now().Sub(canaryAppInstance.Status.LastTrafficShift.Time).Seconds() < float64(canaryAppInstance.Spec.TrafficShiftUpdateInterval) {
 			log.Info("Retriggering Reconcile loop because we have not waiting long enough to update traffic shift ")
-			return ctrl.Result{RequeueAfter: time.Now().Sub(canaryop.Status.LastTrafficShift.Time)}, nil
+			return ctrl.Result{RequeueAfter: time.Now().Sub(canaryAppInstance.Status.LastTrafficShift.Time)}, nil
 		}
 
 		// check if deployment has errors
 
-		if state, err := hasDeploymentErrors(canaryop, log); state {
-			if !canaryop.Spec.FailWhenPrometheusFails && err != nil {
+		if state, err := hasDeploymentErrors(canaryAppInstance, log); state {
+			if !canaryAppInstance.Spec.FailWhenPrometheusFails && err != nil {
 				log.Info("Prometheus query failed ... ignoring")
 			} else {
 				log.Info("Staring rollback")
-				canaryop.Status.TestRunning = false
-				canaryop.Status.SuccessfulRelease = false
-				canaryop.Status.TrafficShift = 0
-				canaryop.Status.LastFailedImage = canaryop.Spec.Image
-				updateTrafficSplit(*vs, 100-canaryop.Status.TrafficShift)
-				if err := r.Status().Update(ctx, &canaryop); err != nil {
+				canaryAppInstance.Status.TestRunning = false
+				canaryAppInstance.Status.SuccessfulRelease = false
+				canaryAppInstance.Status.TrafficShift = 0
+				canaryAppInstance.Status.LastFailedImage = canaryAppInstance.Spec.Image
+				updateTrafficSplit(*vs, 100-canaryAppInstance.Status.TrafficShift)
+				if err := r.Status().Update(ctx, &canaryAppInstance); err != nil {
 					return ctrl.Result{}, err
 				}
 				if err := r.Update(ctx, vs); err != nil {
@@ -138,22 +138,22 @@ func (r *CanaryAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		// update primary deployment to new version if trafficshift > 50%
-		if canaryop.Status.TrafficShift >= 50 {
+		if canaryAppInstance.Status.TrafficShift >= 50 {
 			for i, c := range dep.Spec.Template.Spec.Containers {
-				if c.Name == canaryop.Name {
-					dep.Spec.Template.Spec.Containers[i].Image = canaryop.Spec.Image
+				if c.Name == canaryAppInstance.Name {
+					dep.Spec.Template.Spec.Containers[i].Image = canaryAppInstance.Spec.Image
 					log.Info("Updating primary deployment to new version")
 					if err := r.Update(ctx, dep); err != nil {
 						return ctrl.Result{}, err
 					}
-					r.deploymentReady(canaryop)
+					r.deploymentReady(canaryAppInstance)
 					log.Info("Updating traffic split to 100%")
 					// update traffic shift status
-					canaryop.Status.TestRunning = false
-					canaryop.Status.SuccessfulRelease = true
-					canaryop.Status.TrafficShift = 0
-					updateTrafficSplit(*vs, 100-canaryop.Status.TrafficShift)
-					if err := r.Status().Update(ctx, &canaryop); err != nil {
+					canaryAppInstance.Status.TestRunning = false
+					canaryAppInstance.Status.SuccessfulRelease = true
+					canaryAppInstance.Status.TrafficShift = 0
+					updateTrafficSplit(*vs, 100-canaryAppInstance.Status.TrafficShift)
+					if err := r.Status().Update(ctx, &canaryAppInstance); err != nil {
 						return ctrl.Result{}, err
 					}
 					if err := r.Update(ctx, vs); err != nil {
@@ -168,45 +168,45 @@ func (r *CanaryAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 		}
 		log.Info("Updating traffic split to next value")
-		log.Info("Found", "trafficsplit", canaryop.Status.TrafficShift)
-		canaryop.Status.TrafficShift += 10
-		log.Info("Updated to", "trafficsplit", canaryop.Status.TrafficShift)
-		updateTrafficSplit(*vs, 100-canaryop.Status.TrafficShift)
-		canaryop.Status.LastTrafficShift = &metav1.Time{Time: time.Now()}
-		if err := r.Status().Update(ctx, &canaryop); err != nil {
+		log.Info("Found", "trafficsplit", canaryAppInstance.Status.TrafficShift)
+		canaryAppInstance.Status.TrafficShift += 10
+		log.Info("Updated to", "trafficsplit", canaryAppInstance.Status.TrafficShift)
+		updateTrafficSplit(*vs, 100-canaryAppInstance.Status.TrafficShift)
+		canaryAppInstance.Status.LastTrafficShift = &metav1.Time{Time: time.Now()}
+		if err := r.Status().Update(ctx, &canaryAppInstance); err != nil {
 			return ctrl.Result{}, err
 		}
 		if err := r.Update(ctx, vs); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{RequeueAfter: time.Duration(canaryop.Spec.TrafficShiftUpdateInterval) * time.Second}, nil
+		return ctrl.Result{RequeueAfter: time.Duration(canaryAppInstance.Spec.TrafficShiftUpdateInterval) * time.Second}, nil
 	}
 
 	// Check if versions is updated
 	for _, c := range dep.Spec.Template.Spec.Containers {
-		if canaryop.Spec.Image != c.Image {
+		if canaryAppInstance.Spec.Image != c.Image {
 			log.Info("Found new tag")
-			if canaryop.Spec.Image == canaryop.Status.LastFailedImage {
+			if canaryAppInstance.Spec.Image == canaryAppInstance.Status.LastFailedImage {
 				log.Info("Current set tag is a failed tag")
 				return ctrl.Result{}, nil
 			}
 
-			if err := r.deployDeployment(ctx, canaryop, depsec, log); err != nil {
+			if err := r.deployDeployment(ctx, canaryAppInstance, depsec, log); err != nil {
 				return ctrl.Result{}, err
 			}
-			r.deploymentReady(canaryop)
-			canaryop.Status.TestRunning = true
-			canaryop.Status.TrafficShift = 10
-			updateTrafficSplit(*vs, 100-canaryop.Status.TrafficShift)
-			canaryop.Status.LastTrafficShift = &metav1.Time{Time: time.Now()}
+			r.deploymentReady(canaryAppInstance)
+			canaryAppInstance.Status.TestRunning = true
+			canaryAppInstance.Status.TrafficShift = 10
+			updateTrafficSplit(*vs, 100-canaryAppInstance.Status.TrafficShift)
+			canaryAppInstance.Status.LastTrafficShift = &metav1.Time{Time: time.Now()}
 			// reflect in status
-			if err := r.Status().Update(ctx, &canaryop); err != nil {
+			if err := r.Status().Update(ctx, &canaryAppInstance); err != nil {
 				return ctrl.Result{}, err
 			}
 			if err := r.Update(ctx, vs); err != nil {
 				return ctrl.Result{}, err
 			}
-			return ctrl.Result{RequeueAfter: time.Duration(canaryop.Spec.TrafficShiftUpdateInterval) * time.Second}, nil
+			return ctrl.Result{RequeueAfter: time.Duration(canaryAppInstance.Spec.TrafficShiftUpdateInterval) * time.Second}, nil
 		}
 	}
 
