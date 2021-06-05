@@ -2,7 +2,7 @@ apiVersion: canary.atze.io/v1
 kind: CanaryApp
 metadata:
   name: canaryapp-sample
-  namespace: kees
+  namespace: default
 spec:
   image: atzedevries/go-status-code-server:v1
   imageListenPort: 8088
