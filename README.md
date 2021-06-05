@@ -216,7 +216,7 @@ the namespace in `examples/argocd/canaryapp.yaml` and see what happens
 
 ## Cleanup
 
-Uninstall operator
+Cleanup the cluster
 ```console 
  k3d cluster delete canaryapp-demo
 ```
