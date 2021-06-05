@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: canary-demo-app
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: canary-app-demo
   source:

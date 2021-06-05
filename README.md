@@ -68,7 +68,7 @@ kubectl apply -f samples/addons/prometheus.yaml
 
 ### Operator
 Deploy the CanaryApp operator
-```
+```console
 kubectl kustomize config/default/ | kubectl apply -f -
 ```
 ### CanaryApp
@@ -129,7 +129,7 @@ kubectl patch canaryapp canaryapp-sample \
   --type=merge
 ```
 
-Wait until the deployment is ready and hit
+Wait until the deployment is ready request this url a few times
 ```console
 curl localhost:8090/nothello
 ```
@@ -157,7 +157,7 @@ kubectl \
   get canaryapps canaryapp-sample
 ```
 But not allowed
-```
+```console
 kubectl \
   --as=system:serviceaccount:default:limited-user \
   get pods
@@ -183,7 +183,7 @@ Wait until all pods are started via checking
 kubectl get pods -n argocd
 ```
 
-Once all pods are started get the intial password
+Once all pods are started get the initial password
 ```console
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d && echo
 ```
@@ -214,6 +214,12 @@ updated to reflect the changes. The user is only interacting with git and cannot
 or destroy resources. This is limited by the app project. You can try to change
 the namespace in `examples/argocd/canaryapp.yaml` and see what happens
 
+## Cleanup
+
+Uninstall operator
+```console 
+ k3d cluster delete canaryapp-demo
+```
 
 ## Developing on CanaryApp operator
 
