@@ -33,13 +33,10 @@ var _ = Describe("Canaryapp controller", func() {
 		timeout  = time.Second * 20
 		duration = time.Second * 10
 		interval = time.Millisecond * 250
-		//resourceCreateTimeout = time.Second * 5
 	)
 
 	Context("When updating the image tag", func() {
-		// cannot address const so create vars here
-		//var PrimaryReplicas int32 = 2
-		//var TestReplicas int32 = 2
+
 		It("It should test and update to the new image tag", func() {
 			By("By creating a new CanaryApp")
 			ctx := context.Background()

@@ -68,7 +68,7 @@ func (r *CanaryAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	var canaryAppInstance canaryv1.CanaryApp
 	if err := r.Get(ctx, req.NamespacedName, &canaryAppInstance); err != nil {
-		log.Info("No Canaryop found")
+		log.Info("No CanaryApp resources found. Waiting for a resource to be created")
 		return ctrl.Result{}, nil
 	}
 
@@ -108,7 +108,8 @@ func (r *CanaryAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if canaryAppInstance.Status.TestRunning {
 		// requeue if Reconcile loop has been triggered to fast
 		if time.Now().Sub(canaryAppInstance.Status.LastTrafficShift.Time).Seconds() < float64(canaryAppInstance.Spec.TrafficShiftUpdateInterval) {
-			log.Info("Retriggering Reconcile loop because we have not waiting long enough to update traffic shift ")
+			log.Info("Retriggering Reconcile loop because we have not waiting long enough to update traffic shift",
+				"Next run in seconds", time.Now().Sub(canaryAppInstance.Status.LastTrafficShift.Time).Seconds())
 			return ctrl.Result{RequeueAfter: time.Now().Sub(canaryAppInstance.Status.LastTrafficShift.Time)}, nil
 		}
 
@@ -116,7 +117,8 @@ func (r *CanaryAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		if state, err := hasDeploymentErrors(canaryAppInstance, log); state {
 			if !canaryAppInstance.Spec.FailWhenPrometheusFails && err != nil {
-				log.Info("Prometheus query failed ... ignoring")
+				log.Info("Prometheus query failed ... ignoring",
+					"FailWhenPrometheusFails is set to", canaryAppInstance.Spec.FailWhenPrometheusFails)
 			} else {
 				log.Info("Staring rollback")
 				canaryAppInstance.Status.TestRunning = false
@@ -142,13 +144,12 @@ func (r *CanaryAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			for i, c := range dep.Spec.Template.Spec.Containers {
 				if c.Name == canaryAppInstance.Name {
 					dep.Spec.Template.Spec.Containers[i].Image = canaryAppInstance.Spec.Image
-					log.Info("Updating primary deployment to new version")
+					log.Info("Updating primary deployment to new image", "image", canaryAppInstance.Spec.Image)
 					if err := r.Update(ctx, dep); err != nil {
 						return ctrl.Result{}, err
 					}
 					r.deploymentReady(canaryAppInstance)
-					log.Info("Updating traffic split to 100%")
-					// update traffic shift status
+					log.Info("Updating traffic shift to 100% to the primary deployment")
 					canaryAppInstance.Status.TestRunning = false
 					canaryAppInstance.Status.SuccessfulRelease = true
 					canaryAppInstance.Status.TrafficShift = 0
@@ -167,10 +168,9 @@ func (r *CanaryAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				}
 			}
 		}
-		log.Info("Updating traffic split to next value")
-		log.Info("Found", "trafficsplit", canaryAppInstance.Status.TrafficShift)
+		log.Info("Updating traffic shift to the secondary deployment", "traffic shift", canaryAppInstance.Status.TrafficShift+10)
+		//log.Info("Found", "trafficsplit", canaryAppInstance.Status.TrafficShift)
 		canaryAppInstance.Status.TrafficShift += 10
-		log.Info("Updated to", "trafficsplit", canaryAppInstance.Status.TrafficShift)
 		updateTrafficSplit(*vs, 100-canaryAppInstance.Status.TrafficShift)
 		canaryAppInstance.Status.LastTrafficShift = &metav1.Time{Time: time.Now()}
 		if err := r.Status().Update(ctx, &canaryAppInstance); err != nil {
@@ -185,9 +185,9 @@ func (r *CanaryAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// Check if versions is updated
 	for _, c := range dep.Spec.Template.Spec.Containers {
 		if canaryAppInstance.Spec.Image != c.Image {
-			log.Info("Found new tag")
+			log.Info("Found new image")
 			if canaryAppInstance.Spec.Image == canaryAppInstance.Status.LastFailedImage {
-				log.Info("Current set tag is a failed tag")
+				log.Info("Current set image is a failed tag. Not updating", "Image", canaryAppInstance.Spec.Image)
 				return ctrl.Result{}, nil
 			}
 
@@ -227,7 +227,7 @@ func (r *CanaryAppReconciler) deploymentReady(c canaryv1.CanaryApp) {
 	// TODO: implement deployment ready code
 	// check https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/kubectl/pkg/polymorphichelpers/rollout_status.go#L75
 	log := r.Log.WithName("canaryapp")
-	log.Info("Waiting for deployment not yet implemented, just waiting for 20 seconds")
+	log.Info("Waiting for deployment not yet implemented, just waiting", "Seconds", c.Spec.DeploymentReadyWaitTime)
 	time.Sleep(time.Second * time.Duration(c.Spec.DeploymentReadyWaitTime))
 	return
 }
@@ -358,7 +358,7 @@ func hasDeploymentErrors(c canaryv1.CanaryApp, log logr.Logger) (bool, error) {
 		Address: c.Spec.PrometheusURL,
 	})
 	if err != nil {
-		log.Error(err, "Error creating client")
+		log.Error(err, "Error creating prometheus client")
 		return true, err
 
 	}
@@ -376,13 +376,12 @@ func hasDeploymentErrors(c canaryv1.CanaryApp, log logr.Logger) (bool, error) {
 		return true, err
 	}
 	if len(warnings) > 0 {
-		log.V(3).Info("Warnings:", warnings)
+		log.V(3).Info("Prometheus Warnings:", warnings)
 	}
-	log.Info("Query", "result", result)
+	log.Info("Prometheus Query", "result", result)
 	if result.String() != "" {
-		log.Info("Found some issues Friend! ")
+		log.Info("Prometheus returns results => failure of new component")
 		return true, nil
 	}
 	return false, nil
-
 }

@@ -33,6 +33,7 @@ import (
 
 	canaryv1 "github.com/atzedevries/canaryop/api/v1"
 	"github.com/atzedevries/canaryop/controllers"
+
 	istiogov1alpha3 "istio.io/client-go/pkg/apis/networking/v1alpha3"
 	//+kubebuilder:scaffold:imports
 )
