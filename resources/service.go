@@ -15,7 +15,7 @@ func Service(c *canaryv1.CanaryApp) *corev1.Service {
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{{
-				Port: 8088,
+				Port: c.Spec.ImageListenPort,
 				Name: "http",
 			}},
 			Selector: map[string]string{"app": c.Name},

@@ -51,6 +51,7 @@ var _ = Describe("Canaryapp controller", func() {
 				},
 				Spec: canaryv1.CanaryAppSpec{
 					Image:                      ImageV1,
+					ImageListenPort:            servicePort,
 					Replicas:                   PrimaryReplicas,
 					TestReplicas:               TestReplicas,
 					PrometheusQuery:            "",

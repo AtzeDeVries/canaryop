@@ -33,6 +33,10 @@ type CanaryAppSpec struct {
 	Image string `json:"image"`
 
 	//+kubebuilder:validation:Minimum=1
+	//ImageListenPort the port on which the image listen (only one allowed at the moment)
+	ImageListenPort int32 `json:"imageListenPort"`
+
+	//+kubebuilder:validation:Minimum=1
 	// Replicas of deployment
 	Replicas int32 `json:"replicas"`
 

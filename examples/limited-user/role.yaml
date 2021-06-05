@@ -1,0 +1,24 @@
+# permissions for end users to edit canaryapps.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: canaryapp-editor-role
+rules:
+  - apiGroups:
+      - canary.atze.io
+    resources:
+      - canaryapps
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - canary.atze.io
+    resources:
+      - canaryapps/status
+    verbs:
+      - get

@@ -5,6 +5,7 @@ metadata:
 spec:
   # Add fields here
   image: atzedevries/go-status-code-server:v2
+  imageListenPort: 8088
   replicas: 2
   testReplicas: 1
   prometheusQuery: "increase(istio_requests_total{destination_service_name=\"canaryapp-sample\",response_code=~\"5.*\"}[20s]) > 2"

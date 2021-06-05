@@ -30,7 +30,7 @@ func Deployment(c *canaryv1.CanaryApp, service string, replicas int32) *appsv1.D
 						Image: c.Spec.Image,
 						Name:  c.Name,
 						Ports: []corev1.ContainerPort{{
-							ContainerPort: 8088,
+							ContainerPort: c.Spec.ImageListenPort,
 							Name:          "http",
 						}},
 					}},

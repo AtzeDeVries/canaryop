@@ -51,6 +51,12 @@ spec:
                 description: Image to be deployed
                 minLength: 0
                 type: string
+              imageListenPort:
+                description: ImageListenPort the port on which the image listen (only
+                  one allowed at the moment)
+                format: int32
+                minimum: 1
+                type: integer
               prometheusQuery:
                 description: PrometheusQuery Prometheus query to check state of deployment
                   should return result if deployment is failed
@@ -78,6 +84,7 @@ spec:
                 type: integer
             required:
             - image
+            - imageListenPort
             - prometheusQuery
             - prometheusURL
             - replicas

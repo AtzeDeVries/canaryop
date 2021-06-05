@@ -1,0 +1,12 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: canary-app-demo
+  namespace: argocd
+spec:
+  destinations:
+    - namespace: default
+      server: https://kubernetes.default.svc
+  sourceRepos:
+    - https://github.com/AtzeDeVries/canaryop
+status: {}

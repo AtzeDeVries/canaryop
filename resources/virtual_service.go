@@ -29,7 +29,7 @@ func VirtualService(c *canaryv1.CanaryApp) *istiogov1alpha3.VirtualService {
 						Host:   c.Name,
 						Subset: "primary",
 						Port: &istiov1alpha3.PortSelector{
-							Number: 8088,
+							Number: uint32(c.Spec.ImageListenPort),
 						},
 					},
 				},
@@ -39,7 +39,7 @@ func VirtualService(c *canaryv1.CanaryApp) *istiogov1alpha3.VirtualService {
 							Host:   c.Name,
 							Subset: "secondary",
 							Port: &istiov1alpha3.PortSelector{
-								Number: 8088,
+								Number: uint32(c.Spec.ImageListenPort),
 							},
 						},
 					}},
