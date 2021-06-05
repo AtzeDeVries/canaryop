@@ -1,0 +1,11 @@
+apiVersion: canary.atze.io/v1
+kind: CanaryApp
+metadata:
+  name: canaryapp-sample
+spec:
+  image: atzedevries/go-status-code-server:v1
+  imageListenPort: 8088
+  replicas: 2
+  testReplicas: 1
+  prometheusQuery: "increase(istio_requests_total{destination_service_name=\"canaryapp-sample\",response_code=~\"5.*\"}[20s]) > 2"
+  prometheusURL: "http://prometheus.istio-system.svc:9090"
