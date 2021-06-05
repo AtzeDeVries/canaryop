@@ -36,17 +36,28 @@ spec:
           spec:
             description: CanaryAppSpec defines the desired state of CanaryApp
             properties:
+              deploymentReadyWaitTime:
+                default: 20
+                description: DeploymentReadyWaitTime Time to wait for a deployment
+                  to be ready (temporary unit deploymentReady func in implemented)
+                format: int32
+                type: integer
+              failWhenPrometheusFails:
+                default: true
+                description: FailWhenPrometheusFails Rollback if querying prometheus
+                  fails due to unreachable host or incorrect query
+                type: boolean
               image:
                 description: Image to be deployed
                 minLength: 0
                 type: string
               prometheusQuery:
-                description: Prometheus query to check state of deployment should
-                  return result if deployment is failed
+                description: PrometheusQuery Prometheus query to check state of deployment
+                  should return result if deployment is failed
                 minLength: 0
                 type: string
               prometheusURL:
-                description: Url of the prometheus server
+                description: PrometheusURL Url of the prometheus server
                 minLength: 0
                 type: string
               replicas:
@@ -59,6 +70,12 @@ spec:
                 format: int32
                 minimum: 1
                 type: integer
+              trafficShiftUpdateInterval:
+                default: 30
+                description: TrafficShiftUpdateInterval Interval between updating
+                  the percentage send to secondary deployment
+                format: int32
+                type: integer
             required:
             - image
             - prometheusQuery
@@ -70,6 +87,7 @@ spec:
             description: CanaryAppStatus defines the observed state of CanaryApp
             properties:
               lastFailedTag:
+                default: ""
                 description: States which tag failed on deployment so we don't redeploy
                 type: string
               lastTrafficShift:
@@ -80,9 +98,11 @@ spec:
                 description: A bool which shows if the update has been successful
                 type: boolean
               testRunning:
+                default: false
                 description: A bool which shows if a smoke test is running
                 type: boolean
               trafficShift:
+                default: 0
                 description: Percentage of traffic send to new version
                 format: int32
                 type: integer

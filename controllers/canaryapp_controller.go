@@ -48,6 +48,7 @@ type CanaryAppReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+// Define the rbac for this controller here
 //+kubebuilder:rbac:groups=canary.atze.io,resources=canaryapps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=canary.atze.io,resources=canaryapps/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=canary.atze.io,resources=canaryapps/finalizers,verbs=update
@@ -71,8 +72,6 @@ func (r *CanaryAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 
-	//log.Info("config", "config", canaryop.Spec)
-	//os.Exit(1)
 	// create VirtualService
 	vs := resources.VirtualService(&canaryop)
 	if err := r.deployVirtualService(ctx, canaryop, vs, log); err != nil {
@@ -108,23 +107,34 @@ func (r *CanaryAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// handle the state of the new deployment
 	if canaryop.Status.TestRunning {
 		// requeue if Reconcile loop has been triggered to fast
-		if time.Now().Sub(canaryop.Status.LastTrafficShift.Time).Seconds() < 30 {
+		if time.Now().Sub(canaryop.Status.LastTrafficShift.Time).Seconds() < float64(canaryop.Spec.TrafficShiftUpdateInterval) {
 			log.Info("Retriggering Reconcile loop because we have not waiting long enough to update traffic shift ")
 			return ctrl.Result{RequeueAfter: time.Now().Sub(canaryop.Status.LastTrafficShift.Time)}, nil
 		}
 
 		// check if deployment has errors
-		if hasDeploymentErrors(canaryop, log) {
-			log.Info("Staring rollback")
-			canaryop.Status.TestRunning = false
-			canaryop.Status.SuccessfulRelease = false
-			canaryop.Status.TrafficShift = 0
-			canaryop.Status.LastFailedImage = canaryop.Spec.Image
-			updateTrafficSplit(*vs, 100-canaryop.Status.TrafficShift)
-			r.Status().Update(ctx, &canaryop)
-			r.Update(ctx, vs)
-			r.Delete(ctx, depsec)
-			return ctrl.Result{}, nil
+
+		if state, err := hasDeploymentErrors(canaryop, log); state {
+			if !canaryop.Spec.FailWhenPrometheusFails && err != nil {
+				log.Info("Prometheus query failed ... ignoring")
+			} else {
+				log.Info("Staring rollback")
+				canaryop.Status.TestRunning = false
+				canaryop.Status.SuccessfulRelease = false
+				canaryop.Status.TrafficShift = 0
+				canaryop.Status.LastFailedImage = canaryop.Spec.Image
+				updateTrafficSplit(*vs, 100-canaryop.Status.TrafficShift)
+				if err := r.Status().Update(ctx, &canaryop); err != nil {
+					return ctrl.Result{}, err
+				}
+				if err := r.Update(ctx, vs); err != nil {
+					return ctrl.Result{}, err
+				}
+				if err := r.Delete(ctx, depsec); err != nil {
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{}, nil
+			}
 		}
 
 		// update primary deployment to new version if trafficshift > 50%
@@ -133,18 +143,26 @@ func (r *CanaryAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				if c.Name == canaryop.Name {
 					dep.Spec.Template.Spec.Containers[i].Image = canaryop.Spec.Image
 					log.Info("Updating primary deployment to new version")
-					r.Update(ctx, dep)
-					r.deploymentReady()
+					if err := r.Update(ctx, dep); err != nil {
+						return ctrl.Result{}, err
+					}
+					r.deploymentReady(canaryop)
 					log.Info("Updating traffic split to 100%")
 					// update traffic shift status
 					canaryop.Status.TestRunning = false
 					canaryop.Status.SuccessfulRelease = true
 					canaryop.Status.TrafficShift = 0
 					updateTrafficSplit(*vs, 100-canaryop.Status.TrafficShift)
-					r.Status().Update(ctx, &canaryop)
-					r.Update(ctx, vs)
+					if err := r.Status().Update(ctx, &canaryop); err != nil {
+						return ctrl.Result{}, err
+					}
+					if err := r.Update(ctx, vs); err != nil {
+						return ctrl.Result{}, err
+					}
 					log.Info("Deleting secondary deployment")
-					r.Delete(ctx, depsec)
+					if err := r.Delete(ctx, depsec); err != nil {
+						return ctrl.Result{}, err
+					}
 					return ctrl.Result{}, nil
 				}
 			}
@@ -155,9 +173,13 @@ func (r *CanaryAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		log.Info("Updated to", "trafficsplit", canaryop.Status.TrafficShift)
 		updateTrafficSplit(*vs, 100-canaryop.Status.TrafficShift)
 		canaryop.Status.LastTrafficShift = &metav1.Time{Time: time.Now()}
-		r.Status().Update(ctx, &canaryop)
-		r.Update(ctx, vs)
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		if err := r.Status().Update(ctx, &canaryop); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.Update(ctx, vs); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: time.Duration(canaryop.Spec.TrafficShiftUpdateInterval) * time.Second}, nil
 	}
 
 	// Check if versions is updated
@@ -172,15 +194,19 @@ func (r *CanaryAppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			if err := r.deployDeployment(ctx, canaryop, depsec, log); err != nil {
 				return ctrl.Result{}, err
 			}
-			r.deploymentReady()
+			r.deploymentReady(canaryop)
 			canaryop.Status.TestRunning = true
 			canaryop.Status.TrafficShift = 10
 			updateTrafficSplit(*vs, 100-canaryop.Status.TrafficShift)
 			canaryop.Status.LastTrafficShift = &metav1.Time{Time: time.Now()}
 			// reflect in status
-			r.Status().Update(ctx, &canaryop)
-			r.Update(ctx, vs)
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			if err := r.Status().Update(ctx, &canaryop); err != nil {
+				return ctrl.Result{}, err
+			}
+			if err := r.Update(ctx, vs); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{RequeueAfter: time.Duration(canaryop.Spec.TrafficShiftUpdateInterval) * time.Second}, nil
 		}
 	}
 
@@ -197,27 +223,29 @@ func (r *CanaryAppReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *CanaryAppReconciler) deploymentReady() {
+func (r *CanaryAppReconciler) deploymentReady(c canaryv1.CanaryApp) {
 	// TODO: implement deployment ready code
 	// check https://github.com/kubernetes/kubernetes/blob/master/staging/src/k8s.io/kubectl/pkg/polymorphichelpers/rollout_status.go#L75
 	log := r.Log.WithName("canaryapp")
 	log.Info("Waiting for deployment not yet implemented, just waiting for 20 seconds")
-	time.Sleep(time.Second * 20)
+	time.Sleep(time.Second * time.Duration(c.Spec.DeploymentReadyWaitTime))
 	return
 }
 
 func (r *CanaryAppReconciler) deployVirtualService(ctx context.Context, c canaryv1.CanaryApp, deploy *istiogov1alpha3.VirtualService, log logr.Logger) error {
 	err := r.Get(ctx, types.NamespacedName{Name: deploy.Name, Namespace: c.Namespace}, deploy)
 	if err != nil && errors.IsNotFound(err) {
-		ctrl.SetControllerReference(&c, deploy, r.Scheme)
-		log.Info("Deploying", deploy.Kind, deploy.Namespace+"/"+deploy.Name)
+		if err := ctrl.SetControllerReference(&c, deploy, r.Scheme); err != nil {
+			return err
+		}
+		log.Info("Deploying", "VirtualService", deploy.Namespace+"/"+deploy.Name)
 		err = r.Create(ctx, deploy)
 		if err != nil {
-			log.Info("Failed to create", deploy.Kind, deploy.Namespace+"/"+deploy.Name)
+			log.Info("Failed to create", "VirtualService", deploy.Namespace+"/"+deploy.Name)
 			return err
 		}
 	} else if err != nil {
-		log.Error(err, "Failed to get", deploy.Kind, deploy.Namespace+"/"+deploy.Name)
+		log.Error(err, "Failed to get", "VirtualService", deploy.Namespace+"/"+deploy.Name)
 		return err
 	}
 	return nil
@@ -226,15 +254,17 @@ func (r *CanaryAppReconciler) deployVirtualService(ctx context.Context, c canary
 func (r *CanaryAppReconciler) deployGateway(ctx context.Context, c canaryv1.CanaryApp, deploy *istiogov1alpha3.Gateway, log logr.Logger) error {
 	err := r.Get(ctx, types.NamespacedName{Name: deploy.Name, Namespace: c.Namespace}, deploy)
 	if err != nil && errors.IsNotFound(err) {
-		ctrl.SetControllerReference(&c, deploy, r.Scheme)
-		log.Info("Deploying", deploy.Kind, deploy.Namespace+"/"+deploy.Name)
+		if err := ctrl.SetControllerReference(&c, deploy, r.Scheme); err != nil {
+			return err
+		}
+		log.Info("Deploying", "Gateway", deploy.Namespace+"/"+deploy.Name)
 		err = r.Create(ctx, deploy)
 		if err != nil {
-			log.Info("Failed to create", deploy.Kind, deploy.Namespace+"/"+deploy.Name)
+			log.Info("Failed to create", "Gateway", deploy.Namespace+"/"+deploy.Name)
 			return err
 		}
 	} else if err != nil {
-		log.Error(err, "Failed to get", deploy.Kind, deploy.Namespace+"/"+deploy.Name)
+		log.Error(err, "Failed to get", "Gateway", deploy.Namespace+"/"+deploy.Name)
 		return err
 	}
 	return nil
@@ -243,15 +273,17 @@ func (r *CanaryAppReconciler) deployGateway(ctx context.Context, c canaryv1.Cana
 func (r *CanaryAppReconciler) deployDestinationRule(ctx context.Context, c canaryv1.CanaryApp, deploy *istiogov1alpha3.DestinationRule, log logr.Logger) error {
 	err := r.Get(ctx, types.NamespacedName{Name: deploy.Name, Namespace: c.Namespace}, deploy)
 	if err != nil && errors.IsNotFound(err) {
-		ctrl.SetControllerReference(&c, deploy, r.Scheme)
-		log.Info("Deploying", deploy.Kind, deploy.Namespace+"/"+deploy.Name)
+		if err := ctrl.SetControllerReference(&c, deploy, r.Scheme); err != nil {
+			return err
+		}
+		log.Info("Deploying", "DestinationRule", deploy.Namespace+"/"+deploy.Name)
 		err = r.Create(ctx, deploy)
 		if err != nil {
-			log.Info("Failed to create", deploy.Kind, deploy.Namespace+"/"+deploy.Name)
+			log.Info("Failed to create", "DestinationRule", deploy.Namespace+"/"+deploy.Name)
 			return err
 		}
 	} else if err != nil {
-		log.Error(err, "Failed to get", deploy.Kind, deploy.Namespace+"/"+deploy.Name)
+		log.Error(err, "Failed to get", "DestinationRule", deploy.Namespace+"/"+deploy.Name)
 		return err
 	}
 	return nil
@@ -260,15 +292,17 @@ func (r *CanaryAppReconciler) deployDestinationRule(ctx context.Context, c canar
 func (r *CanaryAppReconciler) deployService(ctx context.Context, c canaryv1.CanaryApp, deploy *corev1.Service, log logr.Logger) error {
 	err := r.Get(ctx, types.NamespacedName{Name: deploy.Name, Namespace: c.Namespace}, deploy)
 	if err != nil && errors.IsNotFound(err) {
-		ctrl.SetControllerReference(&c, deploy, r.Scheme)
-		log.Info("Deploying", deploy.Kind, deploy.Namespace+"/"+deploy.Name)
+		if err := ctrl.SetControllerReference(&c, deploy, r.Scheme); err != nil {
+			return err
+		}
+		log.Info("Deploying", "Service", deploy.Namespace+"/"+deploy.Name)
 		err = r.Create(ctx, deploy)
 		if err != nil {
-			log.Info("Failed to create", deploy.Kind, deploy.Namespace+"/"+deploy.Name)
+			log.Info("Failed to create", "Service", deploy.Namespace+"/"+deploy.Name)
 			return err
 		}
 	} else if err != nil {
-		log.Error(err, "Failed to get", deploy.Kind, deploy.Namespace+"/"+deploy.Name)
+		log.Error(err, "Failed to get", "Service", deploy.Namespace+"/"+deploy.Name)
 		return err
 	}
 	return nil
@@ -277,15 +311,17 @@ func (r *CanaryAppReconciler) deployService(ctx context.Context, c canaryv1.Cana
 func (r *CanaryAppReconciler) deployDeployment(ctx context.Context, c canaryv1.CanaryApp, deploy *appsv1.Deployment, log logr.Logger) error {
 	err := r.Get(ctx, types.NamespacedName{Name: deploy.Name, Namespace: c.Namespace}, deploy)
 	if err != nil && errors.IsNotFound(err) {
-		ctrl.SetControllerReference(&c, deploy, r.Scheme)
-		log.Info("Deploying", deploy.Kind, deploy.Namespace+"/"+deploy.Name)
+		if err := ctrl.SetControllerReference(&c, deploy, r.Scheme); err != nil {
+			return err
+		}
+		log.Info("Deploying", "Deployment", deploy.Namespace+"/"+deploy.Name)
 		err = r.Create(ctx, deploy)
 		if err != nil {
-			log.Info("Failed to create", deploy.Kind, deploy.Namespace+"/"+deploy.Name)
+			log.Info("Failed to create", "Deployment", deploy.Namespace+"/"+deploy.Name)
 			return err
 		}
 	} else if err != nil {
-		log.Error(err, "Failed to get", deploy.Kind, deploy.Namespace+"/"+deploy.Name)
+		log.Error(err, "Failed to get", "Deployment", deploy.Namespace+"/"+deploy.Name)
 		return err
 	}
 	return nil
@@ -317,15 +353,16 @@ func updateTrafficSplit(vs istiogov1alpha3.VirtualService, weight int32) {
 	}
 }
 
-func hasDeploymentErrors(c canaryv1.CanaryApp, log logr.Logger) bool {
-	client, err := promapi.NewClient(promapi.Config{
+func hasDeploymentErrors(c canaryv1.CanaryApp, log logr.Logger) (bool, error) {
+	promClient, err := promapi.NewClient(promapi.Config{
 		Address: c.Spec.PrometheusURL,
 	})
 	if err != nil {
 		log.Error(err, "Error creating client")
+		return true, err
 
 	}
-	v1api := promv1.NewAPI(client)
+	v1api := promv1.NewAPI(promClient)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	r := promv1.Range{
@@ -336,6 +373,7 @@ func hasDeploymentErrors(c canaryv1.CanaryApp, log logr.Logger) bool {
 	result, warnings, err := v1api.QueryRange(ctx, c.Spec.PrometheusQuery, r)
 	if err != nil {
 		log.Error(err, "Error querying Prometheus")
+		return true, err
 	}
 	if len(warnings) > 0 {
 		log.V(3).Info("Warnings:", warnings)
@@ -343,8 +381,8 @@ func hasDeploymentErrors(c canaryv1.CanaryApp, log logr.Logger) bool {
 	log.Info("Query", "result", result)
 	if result.String() != "" {
 		log.Info("Found some issues Friend! ")
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
 
 }

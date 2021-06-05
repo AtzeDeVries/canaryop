@@ -41,12 +41,27 @@ type CanaryAppSpec struct {
 	TestReplicas int32 `json:"testReplicas"`
 
 	//+kubebuilder:validation:MinLength=0
-	// Prometheus query to check state of deployment should return result if deployment is failed
+	// PrometheusQuery Prometheus query to check state of deployment should return result if deployment is failed
 	PrometheusQuery string `json:"prometheusQuery"`
 
 	//+kubebuilder:validation:MinLength=0
-	// Url of the prometheus server
+	// PrometheusURL Url of the prometheus server
 	PrometheusURL string `json:"prometheusURL"`
+
+	//+kubebuilder:default=true
+	//+optional
+	// FailWhenPrometheusFails Rollback if querying prometheus fails due to unreachable host or incorrect query
+	FailWhenPrometheusFails bool `json:"failWhenPrometheusFails"`
+
+	//+kubebuilder:default=30
+	//+optional
+	// TrafficShiftUpdateInterval Interval between updating the percentage send to secondary deployment
+	TrafficShiftUpdateInterval int32 `json:"trafficShiftUpdateInterval"`
+
+	//+kubebuilder:default=20
+	//+optional
+	// DeploymentReadyWaitTime Time to wait for a deployment to be ready (temporary unit deploymentReady func in implemented)
+	DeploymentReadyWaitTime int32 `json:"deploymentReadyWaitTime"`
 }
 
 // CanaryAppStatus defines the observed state of CanaryApp
@@ -55,10 +70,16 @@ type CanaryAppStatus struct {
 
 	// A bool which shows if the update has been successful
 	SuccessfulRelease bool `json:"successfulRelease"`
+
+	//+kubebuilder:default=false
 	// A bool which shows if a smoke test is running
 	TestRunning bool `json:"testRunning"`
+
+	//+kubebuilder:default=0
 	// Percentage of traffic send to new version
 	TrafficShift int32 `json:"trafficShift"`
+
+	//+kubebuilder:default=""
 	// States which tag failed on deployment so we don't redeploy
 	LastFailedImage string `json:"lastFailedTag"`
 	// When the last trafficshift shift was done
