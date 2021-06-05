@@ -17,7 +17,10 @@ limitations under the License.
 package controllers
 
 import (
+	"go/build"
+	istiogov1alpha3 "istio.io/client-go/pkg/apis/networking/v1alpha3"
 	"path/filepath"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"testing"
 
 	. "github.com/onsi/ginkgo"
@@ -52,9 +55,14 @@ func TestAPIs(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
+	// make sure Istio CRD def are added check for this path or similar and reflect below
+	// pkg/mod/istio.io/api@v0.0.0-20210601145914-9a4239731e79/kubernetes
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "config", "crd", "bases")},
+		CRDDirectoryPaths: []string{
+			filepath.Join("..", "config", "crd", "bases"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "istio.io", "api@v0.0.0-20210601145914-9a4239731e79", "kubernetes"),
+		},
 		ErrorIfCRDPathMissing: true,
 	}
 
@@ -65,12 +73,31 @@ var _ = BeforeSuite(func() {
 	err = canaryv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	err = istiogov1alpha3.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
 	//+kubebuilder:scaffold:scheme
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
+	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
+		Scheme: scheme.Scheme,
+	})
+	Expect(err).ToNot(HaveOccurred())
+
+	err = (&CanaryAppReconciler{
+		Client: k8sManager.GetClient(),
+		Scheme: k8sManager.GetScheme(),
+		Log:    ctrl.Log.WithName("controllers").WithName("Canarayop"),
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	go func() {
+		err = k8sManager.Start(ctrl.SetupSignalHandler())
+		Expect(err).ToNot(HaveOccurred())
+	}()
 }, 60)
 
 var _ = AfterSuite(func() {
